@@ -38,6 +38,12 @@ def process_data(
         output_metrics.log_metric("rows_total", float(count_all))
     if count_filtered:
         output_metrics.log_metric("rows_kept", float(count_filtered))
+    # Dummy/derived metrics to ensure visibility at end of run
+    output_metrics.log_metric("dummy_score", 1.0)
+    if count_all:
+        keep_ratio_percent = (count_filtered / count_all) * 100.0
+        if keep_ratio_percent:
+            output_metrics.log_metric("keep_ratio_percent", float(keep_ratio_percent))
 
     # Persist a small summary JSON
     summary = {
