@@ -1,0 +1,118 @@
+# PIPELINE DEFINITION
+# Name: generate-data
+# Description: Generate a tiny dataset and save it as a Hugging Face Dataset.
+# Inputs:
+#    num_rows: int [Default: 5.0]
+#    prefix: str [Default: 'item']
+# Outputs:
+#    generated_dataset: system.Dataset
+components:
+  comp-generate-data:
+    executorLabel: exec-generate-data
+    inputDefinitions:
+      parameters:
+        num_rows:
+          defaultValue: 5.0
+          description: Number of rows to generate.
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        prefix:
+          defaultValue: item
+          description: Text prefix used for the generated content.
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        generated_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-generate-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - generate_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'datasets'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef generate_data(\n    generated_dataset: dsl.Output[dsl.Dataset],\n\
+          \    num_rows: int = 5,\n    prefix: str = \"item\",\n):\n    \"\"\"Generate\
+          \ a tiny dataset and save it as a Hugging Face Dataset.\n\n    Args:\n \
+          \       generated_dataset (dsl.Output[dsl.Dataset]): Output dataset directory.\n\
+          \        num_rows (int): Number of rows to generate.\n        prefix (str):\
+          \ Text prefix used for the generated content.\n    \"\"\"\n    from datasets\
+          \ import Dataset\n\n    print(\"[generate_data] Starting component\")\n\
+          \    print(\n        f\"[generate_data] Parameters -> num_rows={num_rows},\
+          \ prefix='{prefix}'\"\n    )\n\n    rows = []\n    for i in range(num_rows):\n\
+          \        rows.append({\"id\": i, \"text\": f\"{prefix}-{i}\", \"length\"\
+          : len(f\"{prefix}-{i}\")})\n\n    dataset = Dataset.from_list(rows)\n\n\
+          \    # Persist to output artifact path\n    print(\n        f\"[generate_data]\
+          \ Writing dataset with {len(rows)} rows to {generated_dataset.path}\"\n\
+          \    )\n    dataset.save_to_disk(generated_dataset.path)\n    print(\"[generate_data]\
+          \ Finished component\")\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+pipelineInfo:
+  name: generate-data
+root:
+  dag:
+    outputs:
+      artifacts:
+        generated_dataset:
+          artifactSelectors:
+          - outputArtifactKey: generated_dataset
+            producerSubtask: generate-data
+    tasks:
+      generate-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-generate-data
+        inputs:
+          parameters:
+            num_rows:
+              componentInputParameter: num_rows
+            prefix:
+              componentInputParameter: prefix
+        taskInfo:
+          name: generate-data
+  inputDefinitions:
+    parameters:
+      num_rows:
+        defaultValue: 5.0
+        description: Number of rows to generate.
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      prefix:
+        defaultValue: item
+        description: Text prefix used for the generated content.
+        isOptional: true
+        parameterType: STRING
+  outputDefinitions:
+    artifacts:
+      generated_dataset:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.6

@@ -1,0 +1,196 @@
+# PIPELINE DEFINITION
+# Name: basic-two-step-pipeline
+# Description: Generate a small dataset, then process it and log metrics.
+# Inputs:
+#    min_length: int [Default: 0.0]
+#    num_rows: int [Default: 5.0]
+#    prefix: str [Default: 'item']
+components:
+  comp-generate-data:
+    executorLabel: exec-generate-data
+    inputDefinitions:
+      parameters:
+        num_rows:
+          defaultValue: 5.0
+          description: Number of rows to generate.
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        prefix:
+          defaultValue: item
+          description: Text prefix used for the generated content.
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        generated_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-process-data:
+    executorLabel: exec-process-data
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+          description: Input dataset directory from step 1.
+      parameters:
+        min_length:
+          defaultValue: 0.0
+          description: Minimum length filter applied to the text field.
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        output_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        output_results:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-generate-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - generate_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'datasets'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef generate_data(\n    generated_dataset: dsl.Output[dsl.Dataset],\n\
+          \    num_rows: int = 5,\n    prefix: str = \"item\",\n):\n    \"\"\"Generate\
+          \ a tiny dataset and save it as a Hugging Face Dataset.\n\n    Args:\n \
+          \       generated_dataset (dsl.Output[dsl.Dataset]): Output dataset directory.\n\
+          \        num_rows (int): Number of rows to generate.\n        prefix (str):\
+          \ Text prefix used for the generated content.\n    \"\"\"\n    from datasets\
+          \ import Dataset\n\n    rows = []\n    for i in range(num_rows):\n     \
+          \   rows.append({\"id\": i, \"text\": f\"{prefix}-{i}\", \"length\": len(f\"\
+          {prefix}-{i}\")})\n\n    dataset = Dataset.from_list(rows)\n\n    # Persist\
+          \ to output artifact path\n    dataset.save_to_disk(generated_dataset.path)\n\
+          \n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+    exec-process-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - process_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'datasets'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef process_data(\n    input_dataset: dsl.Input[dsl.Dataset],\n \
+          \   output_metrics: dsl.Output[dsl.Metrics],\n    output_results: dsl.Output[dsl.Artifact],\n\
+          \    min_length: int = 0,\n):\n    \"\"\"Process the dataset produced by\
+          \ generate_data and log simple metrics.\n\n    Args:\n        input_dataset\
+          \ (dsl.Input[dsl.Dataset]): Input dataset directory from step 1.\n     \
+          \   output_metrics (dsl.Output[dsl.Metrics]): Metrics to log.\n        output_results\
+          \ (dsl.Output[dsl.Artifact]): JSON results file.\n        min_length (int):\
+          \ Minimum length filter applied to the text field.\n    \"\"\"\n    import\
+          \ json\n    from datasets import load_from_disk\n\n    dataset = load_from_disk(input_dataset.path)\n\
+          \n    # Simple filtering and statistics\n    filtered = dataset.filter(lambda\
+          \ ex: int(ex.get(\"length\", 0)) >= int(min_length))\n    count_all = len(dataset)\n\
+          \    count_filtered = len(filtered)\n\n    # Log metrics (avoid zero values\
+          \ if target UI ignores them)\n    if count_all:\n        output_metrics.log_metric(\"\
+          rows_total\", float(count_all))\n    if count_filtered:\n        output_metrics.log_metric(\"\
+          rows_kept\", float(count_filtered))\n\n    # Persist a small summary JSON\n\
+          \    summary = {\n        \"rows_total\": count_all,\n        \"rows_kept\"\
+          : count_filtered,\n        \"min_length\": int(min_length),\n        \"\
+          example_first\": filtered[0] if count_filtered > 0 else None,\n    }\n\n\
+          \    output_results.name = \"results.json\"\n    with open(output_results.path,\
+          \ \"w\") as f:\n        json.dump(summary, f, indent=2)\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+pipelineInfo:
+  description: Generate a small dataset, then process it and log metrics.
+  name: basic-two-step-pipeline
+root:
+  dag:
+    tasks:
+      generate-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-generate-data
+        inputs:
+          parameters:
+            num_rows:
+              componentInputParameter: num_rows
+            prefix:
+              componentInputParameter: prefix
+        taskInfo:
+          name: generate-data
+      process-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-process-data
+        dependentTasks:
+        - generate-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: generated_dataset
+                producerTask: generate-data
+          parameters:
+            min_length:
+              componentInputParameter: min_length
+        taskInfo:
+          name: process-data
+  inputDefinitions:
+    parameters:
+      min_length:
+        defaultValue: 0.0
+        description: Minimum length filter in step 2.
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      num_rows:
+        defaultValue: 5.0
+        description: Rows generated by step 1.
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      prefix:
+        defaultValue: item
+        description: Text prefix for generated rows.
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.6

@@ -1,0 +1,144 @@
+# PIPELINE DEFINITION
+# Name: process-data
+# Description: Process the dataset produced by generate_data and log simple metrics.
+# Inputs:
+#    input_dataset: system.Dataset
+#    min_length: int [Default: 0.0]
+# Outputs:
+#    output_metrics: system.Metrics
+#    output_results: system.Artifact
+components:
+  comp-process-data:
+    executorLabel: exec-process-data
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+          description: Input dataset directory from step 1.
+      parameters:
+        min_length:
+          defaultValue: 0.0
+          description: Minimum length filter applied to the text field.
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        output_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        output_results:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-process-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - process_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'datasets'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.14.6'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef process_data(\n    input_dataset: dsl.Input[dsl.Dataset],\n \
+          \   output_metrics: dsl.Output[dsl.Metrics],\n    output_results: dsl.Output[dsl.Artifact],\n\
+          \    min_length: int = 0,\n):\n    \"\"\"Process the dataset produced by\
+          \ generate_data and log simple metrics.\n\n    Args:\n        input_dataset\
+          \ (dsl.Input[dsl.Dataset]): Input dataset directory from step 1.\n     \
+          \   output_metrics (dsl.Output[dsl.Metrics]): Metrics to log.\n        output_results\
+          \ (dsl.Output[dsl.Artifact]): JSON results file.\n        min_length (int):\
+          \ Minimum length filter applied to the text field.\n    \"\"\"\n    import\
+          \ json\n    from datasets import load_from_disk\n\n    print(\"[process_data]\
+          \ Starting component\")\n    print(\n        f\"[process_data] Parameters\
+          \ -> min_length={min_length}; reading dataset from {input_dataset.path}\"\
+          \n    )\n    dataset = load_from_disk(input_dataset.path)\n\n    # Simple\
+          \ filtering and statistics\n    filtered = dataset.filter(lambda ex: int(ex.get(\"\
+          length\", 0)) >= int(min_length))\n    count_all = len(dataset)\n    count_filtered\
+          \ = len(filtered)\n\n    # Log metrics (avoid zero values if target UI ignores\
+          \ them)\n    if count_all:\n        output_metrics.log_metric(\"rows_total\"\
+          , float(count_all))\n    if count_filtered:\n        output_metrics.log_metric(\"\
+          rows_kept\", float(count_filtered))\n\n    # Persist a small summary JSON\n\
+          \    summary = {\n        \"rows_total\": count_all,\n        \"rows_kept\"\
+          : count_filtered,\n        \"min_length\": int(min_length),\n        \"\
+          example_first\": filtered[0] if count_filtered > 0 else None,\n    }\n\n\
+          \    output_results.name = \"results.json\"\n    print(f\"[process_data]\
+          \ Writing results summary to {output_results.path}\")\n    with open(output_results.path,\
+          \ \"w\") as f:\n        json.dump(summary, f, indent=2)\n    print(\"[process_data]\
+          \ Finished component\")\n\n"
+        image: registry.access.redhat.com/ubi9/python-311:latest
+pipelineInfo:
+  name: process-data
+root:
+  dag:
+    outputs:
+      artifacts:
+        output_metrics:
+          artifactSelectors:
+          - outputArtifactKey: output_metrics
+            producerSubtask: process-data
+        output_results:
+          artifactSelectors:
+          - outputArtifactKey: output_results
+            producerSubtask: process-data
+    tasks:
+      process-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-process-data
+        inputs:
+          artifacts:
+            input_dataset:
+              componentInputArtifact: input_dataset
+          parameters:
+            min_length:
+              componentInputParameter: min_length
+        taskInfo:
+          name: process-data
+  inputDefinitions:
+    artifacts:
+      input_dataset:
+        artifactType:
+          schemaTitle: system.Dataset
+          schemaVersion: 0.0.1
+        description: Input dataset directory from step 1.
+    parameters:
+      min_length:
+        defaultValue: 0.0
+        description: Minimum length filter applied to the text field.
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+  outputDefinitions:
+    artifacts:
+      output_metrics:
+        artifactType:
+          schemaTitle: system.Metrics
+          schemaVersion: 0.0.1
+      output_results:
+        artifactType:
+          schemaTitle: system.Artifact
+          schemaVersion: 0.0.1
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.6

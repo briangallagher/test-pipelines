@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# macOS
+.DS_Store
+
+# External folders (note: these are siblings; effective only if present under this repo)
+ibm-techxchange-2025/
+pipelines/
