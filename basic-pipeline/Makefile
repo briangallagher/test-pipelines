@@ -5,6 +5,10 @@ KFP_SRC ?= ../pipelines
 build:
 	uv run $(PYTHON) basic_two_step_pipeline.py
 
+.PHONY: build-v2
+build-v2:
+	uv run $(PYTHON) basic_two_step_pipeline_v2.py
+
 .PHONY: kfp-dev
 # Install KFP from a local kubeflow/pipelines repo in editable mode.
 # Usage: make kfp-dev KFP_SRC=/absolute/path/to/pipelines
@@ -28,6 +32,10 @@ kfp-dev:
 .PHONY: build-dev
 build-dev: kfp-dev
 	uv run $(PYTHON) basic_two_step_pipeline.py
+
+.PHONY: build-dev-v2
+build-dev-v2: kfp-dev
+	uv run $(PYTHON) basic_two_step_pipeline_v2.py
 
 .PHONY: build-components
 build-components:
